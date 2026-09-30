@@ -81,6 +81,15 @@ if models_ready; then
     exit 0
 fi
 
+# New model directories must inherit the host group for non-root container writes.
+MODEL_DOWNLOAD_HOST_GID="$(id -g)"
+export MODEL_DOWNLOAD_HOST_GID
+chmod g+rwx,g+s \
+    "$REPO_ROOT/configs/pid/models/object_detection" \
+    "$REPO_ROOT/configs/pid/models/object_detection/.model-download" \
+    "$REPO_ROOT/aig/models" \
+    "$REPO_ROOT/aig/models/.model-download"
+
 log "Starting model-download microservice container"
 if [[ -z "${MODEL_DOWNLOAD_CA_BUNDLE+x}" ]]; then
     for ca_bundle in /etc/ssl/certs/ca-certificates.crt /etc/pki/tls/certs/ca-bundle.crt; do
@@ -139,10 +148,11 @@ job_ids=()
 for index in "${!download_paths[@]}"; do
     download_path="${download_paths[$index]}"
     request_body="${request_bodies[$index]}"
-    if ! response="$(curl --connect-timeout 5 --max-time 30 -fsS -X POST \
+    if ! response="$(curl --connect-timeout 5 --max-time 30 --fail-with-body -sS -X POST \
         -H "Content-Type: application/json" \
         -d "$request_body" "${MODEL_DOWNLOAD_URL}/models/download?download_path=${download_path}")"; then
         echo "Failed to submit model download for $download_path" >&2
+        echo "$response" >&2
         "${compose[@]}" logs --no-color model-download >&2 || true
         exit 1
     fi
